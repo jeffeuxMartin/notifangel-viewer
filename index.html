@@ -1524,9 +1524,7 @@
             state.notifications
               .map(
                 n =>
-                  String(
-                    n.packageName || ""
-                  ).trim()
+                  getPackageName(n)
               )
               .filter(Boolean)
           )
@@ -1661,9 +1659,7 @@
           .filter(
             n => {
               const pkg =
-                String(
-                  n.packageName || ""
-                );
+                getPackageName(n);
 
               if (
                 packageFilter &&
@@ -1809,14 +1805,10 @@
 
     function renderNotification(n) {
       const pkg =
-        String(
-          n.packageName || ""
-        );
+        getPackageName(n);
 
       const key =
-        String(
-          n.key || ""
-        );
+        getNotificationKey(n);
 
       const nm =
         notificationManifest(
@@ -2584,140 +2576,104 @@
     // Notification text / time
     // ========================================================
 
-    function getTitle(n) {
-      if (
-        n.title != null
-      ) {
-        return scalar(
-          n.title
-        );
+    // Match the PC server.py normalization layer.  Current AnnotAngel
+    // snapshots may wrap StatusBarNotification under statusBarNotification,
+    // while older exports were already flattened.  Support both.
+    function statusBarNotificationFor(raw) {
+      const nested = raw?.statusBarNotification;
+      return nested && typeof nested === "object"
+        ? nested
+        : (raw || {});
+    }
+
+
+    function notificationFor(raw) {
+      const sbn = statusBarNotificationFor(raw);
+      const notification = sbn?.notification;
+      return notification && typeof notification === "object"
+        ? notification
+        : {};
+    }
+
+
+    function extrasFor(raw) {
+      const extras = notificationFor(raw)?.extras;
+      if (!extras || typeof extras !== "object") return {};
+      const wrapped = extras._value;
+      return wrapped && typeof wrapped === "object"
+        ? wrapped
+        : extras;
+    }
+
+
+    function getPackageName(raw) {
+      return unwrapText(
+        statusBarNotificationFor(raw)?.packageName
+      ).trim();
+    }
+
+
+    function getNotificationKey(raw) {
+      return unwrapText(
+        statusBarNotificationFor(raw)?.key
+      ).trim();
+    }
+
+
+    function getTitle(raw) {
+      // Older flat export kept title at the record root.
+      if (raw?.title != null) {
+        const flat = unwrapText(raw.title).trim();
+        if (flat) return flat;
       }
 
-      return scalar(
-        n
-          ?.notification
-          ?.extras
-          ?.[
-            "android.title"
-          ]
+      return unwrapText(
+        extrasFor(raw)["android.title"]
+      ).trim();
+    }
+
+
+    function getText(raw) {
+      // Older flat export kept text at the record root.
+      if (raw?.text != null) {
+        const flat = unwrapText(raw.text).trim();
+        if (flat) return flat;
+      }
+
+      const extras = extrasFor(raw);
+      const bigText = unwrapText(extras["android.bigText"]).trim();
+      const text = unwrapText(extras["android.text"]).trim();
+      const subText = unwrapText(extras["android.subText"]).trim();
+
+      // Same content priority as server.py: bigText > text > subText.
+      return bigText || text || subText || "";
+    }
+
+
+    function getPostTime(raw) {
+      const value = Number(
+        statusBarNotificationFor(raw)?.postTime || 0
+      );
+      return Number.isFinite(value) ? value : 0;
+    }
+
+
+    function getTime(raw) {
+      const post = getPostTime(raw);
+      if (post <= 0) return "";
+      return new Date(post).toLocaleTimeString(
+        "zh-TW",
+        {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }
       );
     }
 
 
-    function getText(n) {
-      if (
-        n.text != null
-      ) {
-        return scalar(
-          n.text
-        );
-      }
-
-      const extras =
-        n
-          ?.notification
-          ?.extras ||
-        {};
-
-      return scalar(
-        extras[
-          "android.text"
-        ] ??
-        extras[
-          "android.bigText"
-        ] ??
-        extras[
-          "android.subText"
-        ] ??
-        ""
-      );
-    }
-
-
-    /*
-     * Android notification shade 的顯示時間
-     * 優先使用 Notification.when。
-     *
-     * 若 when 沒有設定，再 fallback 到
-     * StatusBarNotification.postTime。
-     */
-    function getTime(n) {
-      const when =
-        Number(
-          n
-            ?.notification
-            ?.when
-        );
-
-      if (
-        Number.isFinite(when) &&
-        when > 0
-      ) {
-        return new Date(
-          when
-        ).toLocaleTimeString(
-          "zh-TW",
-          {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false
-          }
-        );
-      }
-
-      const post =
-        Number(
-          n?.postTime
-        );
-
-      if (
-        Number.isFinite(post) &&
-        post > 0
-      ) {
-        return new Date(
-          post
-        ).toLocaleTimeString(
-          "zh-TW",
-          {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false
-          }
-        );
-      }
-
-      return "";
-    }
-
-
-    function getSortTime(n) {
-      const when =
-        Number(
-          n
-            ?.notification
-            ?.when
-        );
-
-      if (
-        Number.isFinite(when) &&
-        when > 0
-      ) {
-        return when;
-      }
-
-      const post =
-        Number(
-          n?.postTime
-        );
-
-      if (
-        Number.isFinite(post) &&
-        post > 0
-      ) {
-        return post;
-      }
-
-      return 0;
+    function getSortTime(raw) {
+      return getPostTime(raw);
     }
 
 
@@ -2725,34 +2681,43 @@
     // Generic helpers
     // ========================================================
 
+    function unwrapText(value) {
+      if (value == null) return "";
+
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        return String(value);
+      }
+
+      if (Array.isArray(value)) {
+        return value
+          .map(unwrapText)
+          .filter(Boolean)
+          .join(" | ");
+      }
+
+      if (typeof value === "object") {
+        for (const key of ["text", "_value", "_string"]) {
+          if (
+            Object.prototype.hasOwnProperty.call(value, key) &&
+            value[key] !== value
+          ) {
+            const text = unwrapText(value[key]);
+            if (text) return text;
+          }
+        }
+      }
+
+      return String(value);
+    }
+
+
+    // Kept as an alias for any older helper calls in this single-file viewer.
     function scalar(value) {
-      if (
-        value == null
-      ) {
-        return "";
-      }
-
-      if (
-        typeof value ===
-          "string"
-      ) {
-        return value;
-      }
-
-      if (
-        typeof value ===
-          "number" ||
-        typeof value ===
-          "boolean"
-      ) {
-        return String(
-          value
-        );
-      }
-
-      return JSON.stringify(
-        value
-      );
+      return unwrapText(value);
     }
 
 
