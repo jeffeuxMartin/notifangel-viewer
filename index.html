@@ -1,0 +1,2849 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+  <title>NotifAngel Mobile Viewer</title>
+
+  <meta name="theme-color" content="#b9b9b9">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <style>
+    :root {
+      --bg: #b9b9b9;
+      --card: #707070;
+      --card2: #666;
+      --text: #fff;
+      --muted: #e2e2e2;
+      --line: rgba(255, 255, 255, .16);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family:
+        system-ui,
+        -apple-system,
+        "Noto Sans TC",
+        sans-serif;
+    }
+
+    body {
+      padding:
+        max(10px, env(safe-area-inset-top))
+        10px
+        max(18px, env(safe-area-inset-bottom));
+    }
+
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: 7px 0 9px;
+
+      background: rgba(185, 185, 185, .94);
+      backdrop-filter: blur(10px);
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .fileButton,
+    button,
+    input[type="search"],
+    select {
+      border: 0;
+      border-radius: 11px;
+      padding: 9px 11px;
+      font-size: 14px;
+    }
+
+    .fileButton,
+    button {
+      background: #222;
+      color: white;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    input[type="search"] {
+      flex: 1;
+      min-width: 170px;
+      background: #f4f4f4;
+      color: #111;
+    }
+
+    select {
+      background: #f4f4f4;
+      color: #111;
+    }
+
+    .status {
+      margin-top: 7px;
+      color: #333;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .warn {
+      margin-top: 7px;
+      padding: 8px 10px;
+
+      color: white;
+      background: #805000;
+
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 9px;
+    }
+
+    .card {
+      padding: 13px 14px;
+
+      background:
+        linear-gradient(
+          180deg,
+          var(--card),
+          var(--card2)
+        );
+
+      border-radius: 25px;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, .08) inset;
+    }
+
+    /*
+     * Collapsed card:
+     *
+     * [notification icon] [App / title / two-line content] [time]
+     *                                                   [image] [▼]
+     */
+    .notificationMain {
+      display: grid;
+      grid-template-columns:
+        48px
+        minmax(0, 1fr)
+        auto;
+
+      gap: 10px;
+      align-items: start;
+    }
+
+    .textColumn {
+      min-width: 0;
+    }
+
+    .rightColumn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 7px;
+    }
+
+    .mediaActions {
+      display: flex;
+      align-items: flex-end;
+      gap: 5px;
+      min-height: 38px;
+    }
+
+    /*
+     * 左側 notification icon：
+     * - 只有 small icon：顯示 small
+     * - large + small：large 當主圖，small 疊右下角
+     */
+    .notificationIcon {
+      position: relative;
+
+      width: 48px;
+      height: 48px;
+      flex: 0 0 48px;
+
+      border-radius: 14px;
+      background: #484848;
+      overflow: visible;
+    }
+
+    .notificationIcon .mainIcon {
+      display: block;
+
+      width: 48px;
+      height: 48px;
+
+      border-radius: 14px;
+      object-fit: cover;
+    }
+
+    .notificationIcon.smallOnly .mainIcon {
+      padding: 7px;
+      object-fit: contain;
+    }
+
+    .notificationIcon .smallOverlay {
+      position: absolute;
+      right: -3px;
+      bottom: -3px;
+
+      width: 22px;
+      height: 22px;
+      padding: 3px;
+
+      object-fit: contain;
+
+      background: #555;
+      border: 2px solid #6b6b6b;
+      border-radius: 7px;
+    }
+
+    .appName {
+      color: #f0f0f0;
+      font-size: 13px;
+      font-weight: 650;
+
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /*
+     * Title 永遠只顯示一行。
+     */
+    .title {
+      margin-top: 2px;
+
+      font-size: 18px;
+      line-height: 1.22;
+      font-weight: 720;
+
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    /*
+     * Collapsed 時 content 最多兩行。
+     */
+    .bodyText {
+      margin-top: 5px;
+
+      font-size: 16px;
+      line-height: 1.36;
+
+      white-space: pre-wrap;
+      word-break: break-word;
+
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+
+      overflow: hidden;
+    }
+
+    /*
+     * Expanded 後顯示全文。
+     */
+    .card.expanded .bodyText {
+      display: block;
+      overflow: visible;
+    }
+
+    /*
+     * 右側 content 圖片：
+     * message_image > notification_image > content_uri
+     */
+    .contentThumb {
+      display: block;
+
+      width: 48px;
+      height: 48px;
+
+      object-fit: cover;
+      background: #333;
+
+      border-radius: 9px;
+    }
+
+    .expandButton {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      width: 30px;
+      height: 30px;
+      min-width: 30px;
+
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+
+      background: rgba(0, 0, 0, .22);
+      color: white;
+
+      font-size: 19px;
+      line-height: 1;
+
+      cursor: pointer;
+    }
+
+    /*
+     * Diagnostic / extended content 預設全部收合。
+     */
+    .expandedOnly {
+      display: none;
+    }
+
+    .card.expanded .expandedOnly {
+      display: block;
+    }
+
+    .pkg {
+      margin-top: 10px;
+
+      color: #ddd;
+      font-size: 11px;
+
+      word-break: break-all;
+    }
+
+    .peopleRow {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .person {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      padding: 4px 8px 4px 4px;
+
+      background: rgba(0, 0, 0, .18);
+      border-radius: 999px;
+
+      font-size: 11px;
+    }
+
+    .person img {
+      width: 32px;
+      height: 32px;
+
+      object-fit: cover;
+      border-radius: 50%;
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns:
+        repeat(
+          auto-fit,
+          minmax(115px, 1fr)
+        );
+
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .resource {
+      overflow: hidden;
+
+      background: rgba(0, 0, 0, .18);
+      border-radius: 13px;
+    }
+
+    .resource img {
+      display: block;
+
+      width: 100%;
+      max-height: 240px;
+
+      object-fit: contain;
+      background: #222;
+    }
+
+    .resourceMeta {
+      padding: 6px 7px;
+
+      font-size: 10px;
+      line-height: 1.25;
+
+      word-break: break-all;
+    }
+
+    .role {
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .errors {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .errorChip {
+      padding: 5px 7px;
+
+      background: rgba(128, 50, 0, .45);
+      border-radius: 8px;
+
+      font-size: 10px;
+      word-break: break-all;
+    }
+
+    details {
+      margin-top: 8px;
+      padding-top: 7px;
+
+      border-top: 1px solid var(--line);
+    }
+
+    summary {
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    pre {
+      padding: 8px;
+
+      white-space: pre-wrap;
+      word-break: break-word;
+
+      background: rgba(0, 0, 0, .2);
+      border-radius: 10px;
+
+      font-size: 10px;
+    }
+
+    .empty {
+      padding: 32px 8px;
+
+      color: #333;
+      text-align: center;
+    }
+
+
+    .drivePanel {
+      margin-bottom: 8px;
+      padding: 10px;
+      background: rgba(255, 255, 255, .32);
+      border-radius: 13px;
+      color: #222;
+    }
+
+    .drivePanel summary {
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      user-select: none;
+    }
+
+    .driveGrid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .driveField label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #444;
+    }
+
+    .driveField input {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 11px;
+      font-size: 14px;
+      background: #f7f7f7;
+      color: #111;
+    }
+
+    .driveActions {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin-top: 9px;
+    }
+
+    .primaryButton {
+      background: #111;
+      color: white;
+    }
+
+    .secondaryButton {
+      background: #505050;
+      color: white;
+    }
+
+    .dangerButton {
+      background: #733;
+      color: white;
+    }
+
+    .driveHelp {
+      margin-top: 7px;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #4a4a4a;
+    }
+
+    .connectionDot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: 5px;
+      border-radius: 50%;
+      background: #777;
+      vertical-align: 1px;
+    }
+
+    .connectionDot.online {
+      background: #207a36;
+    }
+
+    .connectionDot.cached {
+      background: #9a6900;
+    }
+
+  </style>
+</head>
+
+<body>
+  <div class="top">
+    <details class="drivePanel" id="drivePanel">
+      <summary>Google Drive 連線設定</summary>
+
+      <div class="driveGrid">
+        <div class="driveField">
+          <label for="clientId">Google OAuth Client ID</label>
+          <input
+            id="clientId"
+            type="text"
+            inputmode="text"
+            autocomplete="off"
+            placeholder="xxxxxxxx.apps.googleusercontent.com"
+          >
+        </div>
+
+        <div class="driveField">
+          <label for="folderId">NotifAngel Drive 資料夾 ID 或連結</label>
+          <input
+            id="folderId"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            placeholder="貼資料夾連結，或直接貼 folder ID"
+          >
+        </div>
+      </div>
+
+      <div class="driveActions">
+        <button id="connectDrive" class="primaryButton" type="button">
+          連接 Drive 並同步
+        </button>
+        <button id="refreshDrive" class="secondaryButton" type="button">
+          重新同步
+        </button>
+        <button id="disconnectDrive" class="dangerButton" type="button">
+          解除本次授權
+        </button>
+      </div>
+
+      <div class="driveHelp">
+        Viewer 只要求 Google Drive 唯讀權限。Client ID 與 folder ID 只存在此瀏覽器的 localStorage；access token 只放在記憶體，不寫入儲存空間。
+      </div>
+    </details>
+
+    <div class="toolbar">
+      <button id="connectDriveTop" type="button">Drive</button>
+
+      <input
+        id="search"
+        type="search"
+        placeholder="搜尋通知"
+      >
+
+      <select id="packageFilter">
+        <option value="">全部 App</option>
+      </select>
+    </div>
+
+    <div
+      id="status"
+      class="status"
+    ></div>
+
+    <div id="warning"></div>
+  </div>
+
+  <div
+    id="list"
+    class="list"
+  >
+    <div class="empty">
+      尚未連接 Google Drive；若有快取會自動顯示
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      jsonRoot: null,
+      notifications: [],
+      jsonName: "",
+      manifest: null,
+      driveIndex: new Map(),
+      objectUrls: [],
+      accessToken: "",
+      tokenExpiresAt: 0,
+      tokenClient: null,
+      rootFolderId: "",
+      connectionMode: "offline",
+      syncTime: 0
+    };
+
+    const $ =
+      id => document.getElementById(id);
+
+    const list =
+      $("list");
+
+    const status =
+      $("status");
+
+    const warning =
+      $("warning");
+
+
+    // ========================================================
+    // Google Drive source (viewer only; no capture code)
+    // ========================================================
+
+    const DRIVE_SCOPE =
+      "https://www.googleapis.com/auth/drive.readonly";
+
+    const DRIVE_API =
+      "https://www.googleapis.com/drive/v3";
+
+    const FOLDER_MIME =
+      "application/vnd.google-apps.folder";
+
+    const SETTINGS_KEY =
+      "notifangel.viewer.settings.v1";
+
+    const CACHE_KEY =
+      "notifangel.viewer.cache.v1";
+
+
+    $("search").addEventListener(
+      "input",
+      render
+    );
+
+
+    $("packageFilter").addEventListener(
+      "change",
+      render
+    );
+
+
+    $("connectDriveTop").addEventListener(
+      "click",
+      () => {
+        $("drivePanel").open = true;
+        $("drivePanel").scrollIntoView({
+          block: "start",
+          behavior: "smooth"
+        });
+      }
+    );
+
+
+    $("connectDrive").addEventListener(
+      "click",
+      connectDrive
+    );
+
+
+    $("refreshDrive").addEventListener(
+      "click",
+      async () => {
+        saveSettings();
+
+        if (!hasUsableToken()) {
+          await connectDrive();
+          return;
+        }
+
+        await syncDrive();
+      }
+    );
+
+
+    $("disconnectDrive").addEventListener(
+      "click",
+      disconnectDrive
+    );
+
+
+    /*
+     * 展開 / 收合使用 event delegation，
+     * render() 後不需要重新綁每一顆 button。
+     */
+    list.addEventListener(
+      "click",
+      e => {
+        const button =
+          e.target.closest(
+            ".expandButton"
+          );
+
+        if (!button) {
+          return;
+        }
+
+        const card =
+          button.closest(
+            ".card"
+          );
+
+        if (!card) {
+          return;
+        }
+
+        const expanded =
+          card.classList.toggle(
+            "expanded"
+          );
+
+        button.setAttribute(
+          "aria-expanded",
+          String(expanded)
+        );
+
+        button.textContent =
+          expanded
+            ? "▴"
+            : "▾";
+
+        button.title =
+          expanded
+            ? "收合"
+            : "展開";
+      }
+    );
+
+
+    function restoreSettings() {
+      try {
+        const obj =
+          JSON.parse(
+            localStorage.getItem(
+              SETTINGS_KEY
+            ) || "{}"
+          );
+
+        $("clientId").value =
+          obj.clientId || "";
+
+        $("folderId").value =
+          obj.folderId || "";
+
+      } catch (_) {
+      }
+    }
+
+
+    function saveSettings() {
+      localStorage.setItem(
+        SETTINGS_KEY,
+        JSON.stringify({
+          clientId:
+            $("clientId").value.trim(),
+          folderId:
+            $("folderId").value.trim()
+        })
+      );
+    }
+
+
+    function restoreCachedViewer() {
+      try {
+        const cached =
+          JSON.parse(
+            localStorage.getItem(
+              CACHE_KEY
+            ) || "null"
+          );
+
+        if (!cached) {
+          return;
+        }
+
+        if (cached.jsonRoot) {
+          state.jsonRoot =
+            cached.jsonRoot;
+          state.jsonName =
+            cached.jsonName ||
+            "notification-latest (cache)";
+          state.notifications =
+            extractNotifications(
+              cached.jsonRoot
+            );
+        }
+
+        state.manifest =
+          cached.manifest || null;
+
+        const indexEntries =
+          Array.isArray(
+            cached.driveIndex
+          )
+            ? cached.driveIndex
+            : [];
+
+        state.driveIndex =
+          new Map(indexEntries);
+
+        state.syncTime =
+          Number(cached.syncTime) || 0;
+
+        if (
+          state.notifications.length
+        ) {
+          state.connectionMode =
+            "cache";
+        }
+
+        rebuildPackageFilter();
+        updateStatus();
+        render();
+
+      } catch (err) {
+        console.warn(
+          "NotifAngel cache restore failed",
+          err
+        );
+      }
+    }
+
+
+    function persistViewerCache() {
+      try {
+        localStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({
+            jsonRoot:
+              state.jsonRoot,
+            jsonName:
+              state.jsonName,
+            manifest:
+              state.manifest,
+            driveIndex:
+              [...state.driveIndex],
+            syncTime:
+              state.syncTime
+          })
+        );
+      } catch (err) {
+        console.warn(
+          "NotifAngel cache write failed",
+          err
+        );
+      }
+    }
+
+
+    function parseFolderId(input) {
+      const raw =
+        String(input || "").trim();
+
+      if (!raw) {
+        return "";
+      }
+
+      const folderMatch =
+        raw.match(
+          /\/folders\/([A-Za-z0-9_-]+)/
+        );
+
+      if (folderMatch) {
+        return folderMatch[1];
+      }
+
+      try {
+        const url =
+          new URL(raw);
+
+        const id =
+          url.searchParams.get("id");
+
+        if (id) {
+          return id;
+        }
+      } catch (_) {
+      }
+
+      return raw;
+    }
+
+
+    async function ensureGIS() {
+      for (
+        let i = 0;
+        i < 50;
+        i++
+      ) {
+        if (
+          window.google
+            ?.accounts
+            ?.oauth2
+            ?.initTokenClient
+        ) {
+          return true;
+        }
+
+        await new Promise(
+          resolve =>
+            setTimeout(resolve, 100)
+        );
+      }
+
+      throw new Error(
+        "Google Identity Services 尚未載入。請確認網路連線後重試。"
+      );
+    }
+
+
+    async function connectDrive() {
+      warning.innerHTML = "";
+      saveSettings();
+
+      const clientId =
+        $("clientId").value.trim();
+
+      const rootFolderId =
+        parseFolderId(
+          $("folderId").value
+        );
+
+      if (!clientId) {
+        $("drivePanel").open = true;
+        showWarning(
+          "請先填 Google OAuth Client ID。"
+        );
+        return;
+      }
+
+      if (!rootFolderId) {
+        $("drivePanel").open = true;
+        showWarning(
+          "請先填 NotifAngel Drive 資料夾 ID 或連結。"
+        );
+        return;
+      }
+
+      state.rootFolderId =
+        rootFolderId;
+
+      try {
+        await ensureGIS();
+      } catch (err) {
+        showWarning(
+          String(err.message || err)
+        );
+        return;
+      }
+
+      state.tokenClient =
+        google.accounts.oauth2
+          .initTokenClient({
+            client_id: clientId,
+            scope: DRIVE_SCOPE,
+            callback: async response => {
+              if (response.error) {
+                showWarning(
+                  "Google 授權失敗：" +
+                  (response.error_description ||
+                   response.error)
+                );
+                return;
+              }
+
+              state.accessToken =
+                response.access_token || "";
+
+              state.tokenExpiresAt =
+                Date.now() +
+                Math.max(
+                  0,
+                  (Number(response.expires_in) || 3600) - 60
+                ) * 1000;
+
+              state.connectionMode =
+                "online";
+
+              updateStatus();
+              await syncDrive();
+            },
+            error_callback: error => {
+              showWarning(
+                "Google 授權視窗失敗：" +
+                (error?.type || "unknown")
+              );
+            }
+          });
+
+      state.tokenClient
+        .requestAccessToken();
+    }
+
+
+    function hasUsableToken() {
+      return Boolean(
+        state.accessToken &&
+        Date.now() <
+          state.tokenExpiresAt
+      );
+    }
+
+
+    function disconnectDrive() {
+      const token =
+        state.accessToken;
+
+      state.accessToken = "";
+      state.tokenExpiresAt = 0;
+      state.tokenClient = null;
+      state.connectionMode =
+        state.notifications.length
+          ? "cache"
+          : "offline";
+
+      updateStatus();
+
+      if (
+        token &&
+        window.google
+          ?.accounts
+          ?.oauth2
+          ?.revoke
+      ) {
+        google.accounts.oauth2
+          .revoke(
+            token,
+            () => updateStatus()
+          );
+      }
+    }
+
+
+    async function driveFetch(
+      url,
+      options = {}
+    ) {
+      if (!hasUsableToken()) {
+        throw new Error(
+          "Drive 授權已過期；請按「連接 Drive 並同步」重新授權。"
+        );
+      }
+
+      const headers =
+        new Headers(
+          options.headers || {}
+        );
+
+      headers.set(
+        "Authorization",
+        "Bearer " +
+          state.accessToken
+      );
+
+      const response =
+        await fetch(
+          url,
+          {
+            ...options,
+            headers
+          }
+        );
+
+      if (
+        response.status === 401
+      ) {
+        state.accessToken = "";
+        state.tokenExpiresAt = 0;
+        state.connectionMode =
+          state.notifications.length
+            ? "cache"
+            : "offline";
+        updateStatus();
+      }
+
+      if (!response.ok) {
+        const body =
+          await response.text();
+
+        throw new Error(
+          `Drive API ${response.status}: ${body.slice(0, 300)}`
+        );
+      }
+
+      return response;
+    }
+
+
+    function escapeDriveQueryValue(value) {
+      return String(value)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
+    }
+
+
+    async function listDriveChildren(
+      folderId
+    ) {
+      const files = [];
+      let pageToken = "";
+
+      do {
+        const q =
+          `'${escapeDriveQueryValue(folderId)}' in parents and trashed = false`;
+
+        const params =
+          new URLSearchParams({
+            q,
+            pageSize: "1000",
+            orderBy: "name",
+            fields:
+              "nextPageToken,files(id,name,mimeType,modifiedTime,size,md5Checksum)"
+          });
+
+        if (pageToken) {
+          params.set(
+            "pageToken",
+            pageToken
+          );
+        }
+
+        params.set(
+          "supportsAllDrives",
+          "true"
+        );
+        params.set(
+          "includeItemsFromAllDrives",
+          "true"
+        );
+
+        const response =
+          await driveFetch(
+            `${DRIVE_API}/files?${params}`
+          );
+
+        const obj =
+          await response.json();
+
+        files.push(
+          ...(obj.files || [])
+        );
+
+        pageToken =
+          obj.nextPageToken || "";
+
+      } while (pageToken);
+
+      return files;
+    }
+
+
+    async function indexDriveTree(
+      rootFolderId
+    ) {
+      const index =
+        new Map();
+
+      const queue = [
+        {
+          id: rootFolderId,
+          path: ""
+        }
+      ];
+
+      let folderCount = 0;
+
+      while (queue.length) {
+        const folder =
+          queue.shift();
+
+        folderCount++;
+
+        if (folderCount > 500) {
+          throw new Error(
+            "資料夾層級異常：超過 500 個資料夾，已停止遞迴。"
+          );
+        }
+
+        const children =
+          await listDriveChildren(
+            folder.id
+          );
+
+        for (
+          const file of children
+        ) {
+          const path =
+            normalizeResourcePath(
+              folder.path
+                ? `${folder.path}/${file.name}`
+                : file.name
+            );
+
+          if (
+            file.mimeType ===
+            FOLDER_MIME
+          ) {
+            queue.push({
+              id: file.id,
+              path
+            });
+          } else {
+            index.set(
+              path,
+              {
+                ...file,
+                path
+              }
+            );
+          }
+        }
+      }
+
+      return index;
+    }
+
+
+    function findDriveFileByNames(
+      names
+    ) {
+      const wanted =
+        new Set(
+          names.map(
+            x =>
+              x.toLocaleLowerCase()
+          )
+        );
+
+      const matches =
+        [...state.driveIndex.values()]
+          .filter(
+            file =>
+              wanted.has(
+                String(file.name || "")
+                  .toLocaleLowerCase()
+              )
+          )
+          .sort(
+            (a, b) =>
+              String(b.modifiedTime || "")
+                .localeCompare(
+                  String(a.modifiedTime || "")
+                )
+          );
+
+      return matches[0] || null;
+    }
+
+
+    function findLatestNotificationJson() {
+      const canonical =
+        findDriveFileByNames([
+          "notification-latest.json",
+          "notification_latest.json"
+        ]);
+
+      if (canonical) {
+        return canonical;
+      }
+
+      const candidates =
+        [...state.driveIndex.values()]
+          .filter(
+            file =>
+              /^notification[-_].*\.json$/i
+                .test(file.name || "")
+          )
+          .sort(
+            (a, b) =>
+              String(b.modifiedTime || "")
+                .localeCompare(
+                  String(a.modifiedTime || "")
+                )
+          );
+
+      return candidates[0] || null;
+    }
+
+
+    function findManifestJson() {
+      const canonical =
+        findDriveFileByNames([
+          "manifest.json"
+        ]);
+
+      if (canonical) {
+        return canonical;
+      }
+
+      return (
+        [...state.driveIndex.values()]
+          .filter(
+            file =>
+              /^manifest.*\.json$/i
+                .test(file.name || "")
+          )
+          .sort(
+            (a, b) =>
+              String(b.modifiedTime || "")
+                .localeCompare(
+                  String(a.modifiedTime || "")
+                )
+          )[0] || null
+      );
+    }
+
+
+    async function downloadDriveFile(
+      fileId
+    ) {
+      return driveFetch(
+        `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`
+      );
+    }
+
+
+    async function downloadDriveJson(
+      file
+    ) {
+      const response =
+        await downloadDriveFile(
+          file.id
+        );
+
+      return response.json();
+    }
+
+
+    async function syncDrive() {
+      warning.innerHTML = "";
+
+      const rootFolderId =
+        parseFolderId(
+          $("folderId").value
+        ) ||
+        state.rootFolderId;
+
+      if (!rootFolderId) {
+        showWarning(
+          "找不到 Drive folder ID。"
+        );
+        return;
+      }
+
+      state.rootFolderId =
+        rootFolderId;
+
+      $("connectDrive").disabled = true;
+      $("refreshDrive").disabled = true;
+      $("connectDriveTop").textContent =
+        "同步中…";
+
+      try {
+        state.driveIndex =
+          await indexDriveTree(
+            rootFolderId
+          );
+
+        const jsonFile =
+          findLatestNotificationJson();
+
+        if (!jsonFile) {
+          throw new Error(
+            "資料夾裡找不到 notification-latest.json / notification_latest.json，也沒有 timestamped notification JSON。"
+          );
+        }
+
+        const manifestFile =
+          findManifestJson();
+
+        const jsonObj =
+          await downloadDriveJson(
+            jsonFile
+          );
+
+        state.manifest =
+          manifestFile
+            ? await downloadDriveJson(
+                manifestFile
+              )
+            : null;
+
+        state.syncTime =
+          Date.now();
+
+        state.connectionMode =
+          "online";
+
+        setJson(
+          jsonObj,
+          jsonFile.path ||
+          jsonFile.name
+        );
+
+        persistViewerCache();
+
+      } catch (err) {
+        showWarning(
+          "Drive 同步失敗：" +
+          String(err.message || err)
+        );
+      } finally {
+        $("connectDrive").disabled = false;
+        $("refreshDrive").disabled = false;
+        $("connectDriveTop").textContent =
+          "Drive";
+        updateStatus();
+      }
+    }
+
+
+    function setJson(
+      obj,
+      name
+    ) {
+      state.jsonRoot =
+        obj;
+
+      state.jsonName =
+        name;
+
+      state.notifications =
+        extractNotifications(
+          obj
+        );
+
+      rebuildPackageFilter();
+      updateStatus();
+      render();
+    }
+
+
+    function extractNotifications(obj) {
+      if (
+        Array.isArray(obj)
+      ) {
+        return obj.filter(
+          x =>
+            x &&
+            typeof x === "object"
+        );
+      }
+
+      if (
+        obj &&
+        Array.isArray(
+          obj.notifications
+        )
+      ) {
+        return obj.notifications.filter(
+          x =>
+            x &&
+            typeof x === "object"
+        );
+      }
+
+      return [];
+    }
+
+
+    // ========================================================
+    // App filter
+    // ========================================================
+
+    function rebuildPackageFilter() {
+      const current =
+        $("packageFilter").value;
+
+      const collator =
+        new Intl.Collator(
+          "zh-Hant",
+          {
+            numeric: true,
+            sensitivity: "base"
+          }
+        );
+
+      const packages =
+        [
+          ...new Set(
+            state.notifications
+              .map(
+                n =>
+                  String(
+                    n.packageName || ""
+                  ).trim()
+              )
+              .filter(Boolean)
+          )
+        ]
+        .sort(
+          (a, b) => {
+            const byAppName =
+              collator.compare(
+                appNameFor(a),
+                appNameFor(b)
+              );
+
+            /*
+             * App 名稱相同時，用 packageName
+             * 當穩定 tie-breaker。
+             */
+            return (
+              byAppName ||
+              collator.compare(
+                a,
+                b
+              )
+            );
+          }
+        );
+
+      $("packageFilter").innerHTML =
+        '<option value="">全部 App</option>' +
+        packages
+          .map(
+            pkg => `
+              <option
+                value="${escapeAttr(pkg)}"
+              >${escapeHtml(
+                appNameFor(pkg)
+              )}</option>
+            `
+          )
+          .join("");
+
+      if (
+        packages.includes(
+          current
+        )
+      ) {
+        $("packageFilter").value =
+          current;
+      }
+    }
+
+
+    function updateStatus() {
+      const mode =
+        state.connectionMode;
+
+      const dotClass =
+        mode === "online"
+          ? "online"
+          : mode === "cache"
+            ? "cached"
+            : "";
+
+      const modeText =
+        mode === "online"
+          ? "Drive 已連線"
+          : mode === "cache"
+            ? "離線快取"
+            : "未連線";
+
+      const syncText =
+        state.syncTime
+          ? new Date(
+              state.syncTime
+            ).toLocaleString(
+              "zh-TW"
+            )
+          : "尚未同步";
+
+      status.innerHTML =
+        `<span class="connectionDot ${dotClass}"></span>` +
+        [
+          modeText,
+          `JSON: ${
+            escapeHtml(
+              state.jsonName ||
+              "未載入"
+            )
+          }`,
+          `${state.notifications.length} notifications`,
+          `manifest: ${
+            state.manifest
+              ? "有"
+              : "無"
+          }`,
+          `Drive files: ${
+            state.driveIndex.size
+          }`,
+          `sync: ${
+            escapeHtml(syncText)
+          }`
+        ].join(" · ");
+    }
+
+
+    // ========================================================
+    // Rendering
+    // ========================================================
+
+    function render() {
+      if (
+        !state.notifications.length
+      ) {
+        clearObjectUrls();
+
+        list.innerHTML =
+          '<div class="empty">沒有可顯示的 notification</div>';
+
+        return;
+      }
+
+      const query =
+        $("search")
+          .value
+          .trim()
+          .toLocaleLowerCase();
+
+      const packageFilter =
+        $("packageFilter").value;
+
+      const rows =
+        state.notifications
+          .filter(
+            n => {
+              const pkg =
+                String(
+                  n.packageName || ""
+                );
+
+              if (
+                packageFilter &&
+                pkg !== packageFilter
+              ) {
+                return false;
+              }
+
+              if (!query) {
+                return true;
+              }
+
+              return [
+                pkg,
+                appNameFor(pkg),
+                getTitle(n),
+                getText(n),
+                JSON.stringify(n)
+              ]
+                .join("\n")
+                .toLocaleLowerCase()
+                .includes(query);
+            }
+          )
+
+          /*
+           * 顯示時間與排序都優先使用
+           * Notification.when。
+           */
+          .sort(
+            (a, b) =>
+              getSortTime(b) -
+              getSortTime(a)
+          );
+
+      clearObjectUrls();
+
+      list.innerHTML =
+        rows
+          .map(
+            renderNotification
+          )
+          .join("");
+
+      bindImageFallbacks();
+    }
+
+
+    /*
+     * 同 role 可能有多個 sourcePath。
+     * 優先使用 notification.smallIcon /
+     * notification.largeIcon 的 canonical source。
+     */
+    function pickNotificationResource(
+      resources,
+      role,
+      preferredPath
+    ) {
+      const matches =
+        resources.filter(
+          r =>
+            r.role === role
+        );
+
+      if (!matches.length) {
+        return null;
+      }
+
+      return (
+        matches.find(
+          r =>
+            r.sourcePath ===
+            preferredPath
+        ) ||
+        matches[0]
+      );
+    }
+
+
+    /*
+     * 右側 collapsed thumbnail。
+     *
+     * 優先順序：
+     * message_image
+     * → notification_image
+     * → content_uri
+     * → 其他非 icon / avatar 的 image role
+     */
+    function pickContentResource(
+      resources
+    ) {
+      const preferredRoles = [
+        "message_image",
+        "notification_image",
+        "content_uri"
+      ];
+
+      for (
+        const role of
+        preferredRoles
+      ) {
+        const found =
+          resources.find(
+            r =>
+              r.role === role &&
+              r.file
+          );
+
+        if (found) {
+          return found;
+        }
+      }
+
+      return (
+        resources.find(
+          r => {
+            const role =
+              String(
+                r.role || ""
+              ).toLowerCase();
+
+            return (
+              r.file &&
+              role.includes(
+                "image"
+              ) &&
+              !role.includes(
+                "icon"
+              ) &&
+              !role.includes(
+                "sender"
+              ) &&
+              !role.includes(
+                "avatar"
+              )
+            );
+          }
+        ) ||
+        null
+      );
+    }
+
+
+    function renderNotification(n) {
+      const pkg =
+        String(
+          n.packageName || ""
+        );
+
+      const key =
+        String(
+          n.key || ""
+        );
+
+      const nm =
+        notificationManifest(
+          key
+        );
+
+      const resources =
+        Array.isArray(
+          nm?.resources
+        )
+          ? nm.resources
+          : [];
+
+      const errors =
+        Array.isArray(
+          nm?.errors
+        )
+          ? nm.errors
+          : [];
+
+
+      // ------------------------------------------------------
+      // Left notification icon
+      // ------------------------------------------------------
+
+      const smallIcon =
+        pickNotificationResource(
+          resources,
+          "notification_small_icon",
+          "notification.smallIcon"
+        );
+
+      const largeIcon =
+        pickNotificationResource(
+          resources,
+          "notification_large_icon",
+          "notification.largeIcon"
+        );
+
+      let notificationIconHtml =
+        "";
+
+      if (largeIcon) {
+        notificationIconHtml = `
+          <div class="notificationIcon">
+
+            <img
+              class="mainIcon"
+              data-resource="${escapeAttr(
+                largeIcon.file || ""
+              )}"
+              alt=""
+            >
+
+            ${
+              smallIcon
+                ? `
+                  <img
+                    class="smallOverlay"
+                    data-resource="${escapeAttr(
+                      smallIcon.file || ""
+                    )}"
+                    alt=""
+                  >
+                `
+                : ""
+            }
+
+          </div>
+        `;
+
+      } else if (smallIcon) {
+        notificationIconHtml = `
+          <div
+            class="notificationIcon smallOnly"
+          >
+            <img
+              class="mainIcon"
+              data-resource="${escapeAttr(
+                smallIcon.file || ""
+              )}"
+              alt=""
+            >
+          </div>
+        `;
+
+      } else {
+        notificationIconHtml = `
+          <div
+            class="notificationIcon smallOnly"
+          ></div>
+        `;
+      }
+
+
+      // ------------------------------------------------------
+      // Right-side content image
+      // ------------------------------------------------------
+
+      const contentImage =
+        pickContentResource(
+          resources
+        );
+
+      const contentImageHtml =
+        contentImage
+          ? `
+            <img
+              class="contentThumb"
+              data-resource="${escapeAttr(
+                contentImage.file
+              )}"
+              title="${escapeAttr(
+                contentImage.role ||
+                ""
+              )}"
+              alt=""
+            >
+          `
+          : "";
+
+
+      // ------------------------------------------------------
+      // Expanded-only diagnostic resources
+      // ------------------------------------------------------
+
+      const personResources =
+        resources.filter(
+          r =>
+            /person|sender|avatar|messaging_user/i
+              .test(
+                String(
+                  r.role || ""
+                )
+              )
+        );
+
+
+      /*
+       * 已經拿去當 header icon、
+       * person row 或右側 thumbnail 的 resource，
+       * 不在 gallery 再畫一次。
+       */
+      const imageResources =
+        resources.filter(
+          r => {
+            const role =
+              String(
+                r.role || ""
+              );
+
+            if (
+              /app_icon|notification_small_icon|notification_large_icon|person|sender|avatar|messaging_user/i
+                .test(role)
+            ) {
+              return false;
+            }
+
+            if (
+              contentImage &&
+              r.file ===
+                contentImage.file
+            ) {
+              return false;
+            }
+
+            return true;
+          }
+        );
+
+
+      const peopleHtml =
+        personResources.length
+          ? `
+            <div class="peopleRow">
+
+              ${
+                personResources
+                  .map(
+                    r => `
+                      <div class="person">
+
+                        <img
+                          data-resource="${escapeAttr(
+                            r.file || ""
+                          )}"
+                          alt=""
+                        >
+
+                        <span>
+                          ${escapeHtml(
+                            r.role ||
+                            "person"
+                          )}
+                        </span>
+
+                      </div>
+                    `
+                  )
+                  .join("")
+              }
+
+            </div>
+          `
+          : "";
+
+
+      const galleryHtml =
+        imageResources.length
+          ? `
+            <div class="gallery">
+
+              ${
+                imageResources
+                  .map(
+                    r => `
+                      <div class="resource">
+
+                        <img
+                          data-resource="${escapeAttr(
+                            r.file || ""
+                          )}"
+                          alt=""
+                        >
+
+                        <div class="resourceMeta">
+
+                          <div class="role">
+                            ${escapeHtml(
+                              r.role ||
+                              "image"
+                            )}
+                          </div>
+
+                          <div>
+                            ${escapeHtml(
+                              r.sourcePath ||
+                              ""
+                            )}
+                          </div>
+
+                          ${
+                            r.sourceUri
+                              ? `
+                                <div>
+                                  ${escapeHtml(
+                                    r.sourceUri
+                                  )}
+                                </div>
+                              `
+                              : ""
+                          }
+
+                        </div>
+
+                      </div>
+                    `
+                  )
+                  .join("")
+              }
+
+            </div>
+          `
+          : "";
+
+
+      const errorsHtml =
+        errors.length
+          ? `
+            <div class="errors">
+
+              ${
+                errors
+                  .map(
+                    x => `
+                      <div class="errorChip">
+                        ${escapeHtml(
+                          typeof x ===
+                            "string"
+                            ? x
+                            : JSON.stringify(
+                                x
+                              )
+                        )}
+                      </div>
+                    `
+                  )
+                  .join("")
+              }
+
+            </div>
+          `
+          : "";
+
+
+      return `
+        <article class="card">
+
+          <div class="notificationMain">
+
+            ${notificationIconHtml}
+
+            <div class="textColumn">
+
+              <div class="appName">
+                ${escapeHtml(
+                  appNameFor(pkg)
+                )}
+              </div>
+
+              <div class="title">
+                ${escapeHtml(
+                  getTitle(n) ||
+                  "(no title)"
+                )}
+              </div>
+
+              ${
+                getText(n)
+                  ? `
+                    <div class="bodyText">
+                      ${escapeHtml(
+                        getText(n)
+                      )}
+                    </div>
+                  `
+                  : ""
+              }
+
+            </div>
+
+            <div class="rightColumn">
+
+              <div class="time">
+                ${escapeHtml(
+                  getTime(n)
+                )}
+              </div>
+
+              <div class="mediaActions">
+
+                ${contentImageHtml}
+
+                <button
+                  class="expandButton"
+                  type="button"
+                  aria-expanded="false"
+                  title="展開"
+                >▾</button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <div class="expandedOnly">
+
+            <div class="pkg">
+              ${escapeHtml(pkg)}
+            </div>
+
+            ${peopleHtml}
+
+            ${galleryHtml}
+
+            ${errorsHtml}
+
+            <details>
+              <summary>
+                Extractor resources
+                (${resources.length})
+              </summary>
+
+              <pre>${escapeHtml(
+                JSON.stringify(
+                  nm || {},
+                  null,
+                  2
+                )
+              )}</pre>
+            </details>
+
+            <details>
+              <summary>
+                Raw notification JSON
+              </summary>
+
+              <pre>${escapeHtml(
+                JSON.stringify(
+                  n,
+                  null,
+                  2
+                )
+              )}</pre>
+            </details>
+
+          </div>
+
+        </article>
+      `;
+    }
+
+
+    // ========================================================
+    // Resource file binding
+    // ========================================================
+
+    function bindImageFallbacks() {
+      for (
+        const img of
+        document.querySelectorAll(
+          "img[data-resource]"
+        )
+      ) {
+        bindDriveImage(img);
+      }
+    }
+
+
+    async function bindDriveImage(img) {
+      const resource =
+        normalizeResourcePath(
+          img.dataset.resource ||
+          ""
+        );
+
+      if (!resource) {
+        return;
+      }
+
+      const file =
+        findDriveResource(
+          resource
+        );
+
+      if (!file) {
+        markImageFailure(
+          img,
+          resource,
+          "Drive index 找不到檔案"
+        );
+        return;
+      }
+
+      try {
+        let blob =
+          await getCachedBlob(
+            file.id
+          );
+
+        if (!blob) {
+          if (!hasUsableToken()) {
+            markImageFailure(
+              img,
+              resource,
+              "尚未快取，且 Drive 未連線"
+            );
+            return;
+          }
+
+          const response =
+            await downloadDriveFile(
+              file.id
+            );
+
+          blob =
+            await response.blob();
+
+          putCachedBlob(
+            file.id,
+            blob
+          ).catch(
+            err =>
+              console.warn(
+                "resource cache write failed",
+                err
+              )
+          );
+        }
+
+        const url =
+          URL.createObjectURL(
+            blob
+          );
+
+        state.objectUrls.push(
+          url
+        );
+
+        img.src = url;
+
+        img.onerror =
+          () =>
+            markImageFailure(
+              img,
+              resource,
+              "圖片解碼失敗"
+            );
+
+      } catch (err) {
+        markImageFailure(
+          img,
+          resource,
+          String(err.message || err)
+        );
+      }
+    }
+
+
+    function markImageFailure(
+      img,
+      resource,
+      reason
+    ) {
+      img.style.display =
+        "none";
+
+      const parent =
+        img.closest(
+          ".resource," +
+          ".person," +
+          ".notificationIcon," +
+          ".mediaActions"
+        );
+
+      if (parent) {
+        parent.title =
+          "圖片載入失敗：" +
+          resource +
+          (reason
+            ? " · " + reason
+            : "");
+      }
+    }
+
+
+    function findDriveResource(path) {
+      path =
+        normalizeResourcePath(
+          path
+        );
+
+      if (
+        state.driveIndex.has(
+          path
+        )
+      ) {
+        return state.driveIndex.get(
+          path
+        );
+      }
+
+      const suffix =
+        "/" + path;
+
+      const base =
+        path
+          .split("/")
+          .pop();
+
+      let baseMatch = null;
+
+      for (
+        const [key, file] of
+        state.driveIndex
+      ) {
+        if (
+          key.endsWith(suffix)
+        ) {
+          return file;
+        }
+
+        if (
+          !baseMatch &&
+          file.name === base
+        ) {
+          baseMatch = file;
+        }
+      }
+
+      return baseMatch;
+    }
+
+
+    // ========================================================
+    // IndexedDB resource cache
+    // ========================================================
+
+    const DB_NAME =
+      "notifangel-mobile-viewer";
+
+    const DB_VERSION = 1;
+
+    const BLOB_STORE =
+      "resourceBlobs";
+
+
+    function openViewerDb() {
+      return new Promise(
+        (resolve, reject) => {
+          const request =
+            indexedDB.open(
+              DB_NAME,
+              DB_VERSION
+            );
+
+          request.onupgradeneeded =
+            () => {
+              const db =
+                request.result;
+
+              if (
+                !db.objectStoreNames
+                  .contains(
+                    BLOB_STORE
+                  )
+              ) {
+                db.createObjectStore(
+                  BLOB_STORE
+                );
+              }
+            };
+
+          request.onsuccess =
+            () =>
+              resolve(
+                request.result
+              );
+
+          request.onerror =
+            () =>
+              reject(
+                request.error
+              );
+        }
+      );
+    }
+
+
+    async function getCachedBlob(key) {
+      try {
+        const db =
+          await openViewerDb();
+
+        return await new Promise(
+          (resolve, reject) => {
+            const tx =
+              db.transaction(
+                BLOB_STORE,
+                "readonly"
+              );
+
+            const request =
+              tx.objectStore(
+                BLOB_STORE
+              ).get(key);
+
+            request.onsuccess =
+              () =>
+                resolve(
+                  request.result || null
+                );
+
+            request.onerror =
+              () =>
+                reject(
+                  request.error
+                );
+          }
+        );
+
+      } catch (_) {
+        return null;
+      }
+    }
+
+
+    async function putCachedBlob(
+      key,
+      blob
+    ) {
+      const db =
+        await openViewerDb();
+
+      return new Promise(
+        (resolve, reject) => {
+          const tx =
+            db.transaction(
+              BLOB_STORE,
+              "readwrite"
+            );
+
+          tx.objectStore(
+            BLOB_STORE
+          ).put(
+            blob,
+            key
+          );
+
+          tx.oncomplete =
+            () => resolve();
+
+          tx.onerror =
+            () =>
+              reject(
+                tx.error
+              );
+        }
+      );
+    }
+
+
+    function clearObjectUrls() {
+      for (
+        const url of
+        state.objectUrls
+      ) {
+        URL.revokeObjectURL(
+          url
+        );
+      }
+
+      state.objectUrls =
+        [];
+    }
+
+
+    // ========================================================
+    // Manifest helpers
+    // ========================================================
+
+    function appManifest(pkg) {
+      return (
+        state.manifest
+          ?.apps
+          ?.[pkg] ||
+        null
+      );
+    }
+
+
+    function notificationManifest(key) {
+      return (
+        state.manifest
+          ?.notifications
+          ?.[key] ||
+        null
+      );
+    }
+
+
+    function appNameFor(pkg) {
+      return (
+        appManifest(pkg)
+          ?.appName ||
+        pkg ||
+        "(unknown app)"
+      );
+    }
+
+
+    // ========================================================
+    // Notification text / time
+    // ========================================================
+
+    function getTitle(n) {
+      if (
+        n.title != null
+      ) {
+        return scalar(
+          n.title
+        );
+      }
+
+      return scalar(
+        n
+          ?.notification
+          ?.extras
+          ?.[
+            "android.title"
+          ]
+      );
+    }
+
+
+    function getText(n) {
+      if (
+        n.text != null
+      ) {
+        return scalar(
+          n.text
+        );
+      }
+
+      const extras =
+        n
+          ?.notification
+          ?.extras ||
+        {};
+
+      return scalar(
+        extras[
+          "android.text"
+        ] ??
+        extras[
+          "android.bigText"
+        ] ??
+        extras[
+          "android.subText"
+        ] ??
+        ""
+      );
+    }
+
+
+    /*
+     * Android notification shade 的顯示時間
+     * 優先使用 Notification.when。
+     *
+     * 若 when 沒有設定，再 fallback 到
+     * StatusBarNotification.postTime。
+     */
+    function getTime(n) {
+      const when =
+        Number(
+          n
+            ?.notification
+            ?.when
+        );
+
+      if (
+        Number.isFinite(when) &&
+        when > 0
+      ) {
+        return new Date(
+          when
+        ).toLocaleTimeString(
+          "zh-TW",
+          {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }
+        );
+      }
+
+      const post =
+        Number(
+          n?.postTime
+        );
+
+      if (
+        Number.isFinite(post) &&
+        post > 0
+      ) {
+        return new Date(
+          post
+        ).toLocaleTimeString(
+          "zh-TW",
+          {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }
+        );
+      }
+
+      return "";
+    }
+
+
+    function getSortTime(n) {
+      const when =
+        Number(
+          n
+            ?.notification
+            ?.when
+        );
+
+      if (
+        Number.isFinite(when) &&
+        when > 0
+      ) {
+        return when;
+      }
+
+      const post =
+        Number(
+          n?.postTime
+        );
+
+      if (
+        Number.isFinite(post) &&
+        post > 0
+      ) {
+        return post;
+      }
+
+      return 0;
+    }
+
+
+    // ========================================================
+    // Generic helpers
+    // ========================================================
+
+    function scalar(value) {
+      if (
+        value == null
+      ) {
+        return "";
+      }
+
+      if (
+        typeof value ===
+          "string"
+      ) {
+        return value;
+      }
+
+      if (
+        typeof value ===
+          "number" ||
+        typeof value ===
+          "boolean"
+      ) {
+        return String(
+          value
+        );
+      }
+
+      return JSON.stringify(
+        value
+      );
+    }
+
+
+    function normalizeResourcePath(path) {
+      return String(
+        path || ""
+      )
+        .replaceAll(
+          "\\",
+          "/"
+        )
+        .replace(
+          /^\.\//,
+          ""
+        )
+        .replace(
+          /^.*?resources\//,
+          "resources/"
+        );
+    }
+
+
+    function showWarning(text) {
+      warning.innerHTML = `
+        <div class="warn">
+          ${escapeHtml(text)}
+        </div>
+      `;
+    }
+
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll(
+          "&",
+          "&amp;"
+        )
+        .replaceAll(
+          "<",
+          "&lt;"
+        )
+        .replaceAll(
+          ">",
+          "&gt;"
+        )
+        .replaceAll(
+          '"',
+          "&quot;"
+        )
+        .replaceAll(
+          "'",
+          "&#039;"
+        );
+    }
+
+
+    function escapeAttr(value) {
+      return escapeHtml(
+        value
+      );
+    }
+
+
+    // ========================================================
+    // Startup
+    // ========================================================
+
+    restoreSettings();
+    restoreCachedViewer();
+    updateStatus();
+
+    if (
+      "serviceWorker" in navigator &&
+      location.protocol !== "file:"
+    ) {
+      window.addEventListener(
+        "load",
+        () => {
+          navigator.serviceWorker
+            .register("./sw.js")
+            .catch(
+              err =>
+                console.warn(
+                  "service worker registration failed",
+                  err
+                )
+            );
+        }
+      );
+    }
+
+  </script>
+</body>
+</html>
